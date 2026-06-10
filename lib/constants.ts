@@ -52,6 +52,23 @@ export const ANIMAL_TYPES = [
   'Bear',
 ] as const;
 
+/** Object types for Visual Math Problems activity (Req 1.5) */
+export const MATH_OBJECT_TYPES = [
+  'apple', 'star', 'balloon', 'flower', 'fish', 'heart', 'cookie', 'butterfly'
+] as const;
+
+/** Emoji mapping for Visual Math Problems object types (Req 8.3) */
+export const MATH_OBJECT_EMOJI_MAP: Record<string, string> = {
+  apple: '🍎',
+  star: '⭐',
+  balloon: '🎈',
+  flower: '🌸',
+  fish: '🐟',
+  heart: '❤️',
+  cookie: '🍪',
+  butterfly: '🦋',
+};
+
 /** Number of questions per activity session (Req 15.1) */
 export const QUESTIONS_PER_SESSION = 5;
 
