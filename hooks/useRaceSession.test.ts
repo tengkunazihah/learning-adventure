@@ -1,7 +1,7 @@
 import { act, renderHook } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 
-import { QUESTIONS_PER_SESSION } from '@/lib/constants';
+import { QUESTIONS_PER_SESSION, QUESTION_TIME_LIMIT_SECONDS } from '@/lib/constants';
 
 import { useRaceSession } from './useRaceSession';
 
@@ -32,7 +32,24 @@ vi.mock('@/features/math/math-race', async () => {
   };
 });
 
+// Mock random for opponent movement
+vi.mock('@/lib/random', async () => {
+  const actual = await vi.importActual<typeof import('@/lib/random')>('@/lib/random');
+  return {
+    ...actual,
+    randomInt: vi.fn((min: number, max: number) => Math.floor((min + max) / 2)),
+  };
+});
+
 describe('useRaceSession', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it('initializes in character-select phase with no character selected', () => {
     const { result } = renderHook(() => useRaceSession());
 
@@ -43,6 +60,7 @@ describe('useRaceSession', () => {
     expect(result.current.state.playerPosition).toBe(0);
     expect(result.current.state.placement).toBeNull();
     expect(result.current.state.stickersEarned).toBe(0);
+    expect(result.current.state.timeRemaining).toBe(QUESTION_TIME_LIMIT_SECONDS);
     expect(result.current.accuracyPercent).toBe(0);
     expect(result.current.isFirstAttempt).toBe(true);
   });
@@ -85,6 +103,7 @@ describe('useRaceSession', () => {
     expect(result.current.state.currentQuestionIndex).toBe(0);
     expect(result.current.state.playerPosition).toBe(0);
     expect(result.current.state.firstAttemptResults).toHaveLength(0);
+    expect(result.current.state.timeRemaining).toBe(QUESTION_TIME_LIMIT_SECONDS);
   });
 
   it('submitAnswer returns correct=true and firstAttempt=true on first correct answer', () => {
@@ -122,7 +141,7 @@ describe('useRaceSession', () => {
     expect(result.current.state.playerPosition).toBe(expectedIncrement);
   });
 
-  it('submitAnswer does NOT advance player position on incorrect answer', () => {
+  it('submitAnswer does NOT advance player position on incorrect answer and skips to next question', () => {
     const { result } = renderHook(() => useRaceSession());
 
     act(() => {
@@ -137,9 +156,13 @@ describe('useRaceSession', () => {
     });
 
     expect(result.current.state.playerPosition).toBe(0);
+    // Wrong answer skips to next question
+    expect(result.current.state.currentQuestionIndex).toBe(1);
+    // Records as incorrect first attempt
+    expect(result.current.state.firstAttemptResults).toEqual([false]);
   });
 
-  it('submitAnswer tracks first-attempt correctly when first answer is wrong', () => {
+  it('wrong answer records false in firstAttemptResults and moves to next question', () => {
     const { result } = renderHook(() => useRaceSession());
 
     act(() => {
@@ -149,21 +172,17 @@ describe('useRaceSession', () => {
       result.current.startRace();
     });
 
-    // First: incorrect
     let incorrectResult: { correct: boolean; firstAttempt: boolean } | undefined;
     act(() => {
       incorrectResult = result.current.submitAnswer('opt-1');
     });
     expect(incorrectResult).toEqual({ correct: false, firstAttempt: false });
-    expect(result.current.isFirstAttempt).toBe(false);
 
-    // Then: correct (but not first attempt)
-    let correctResult: { correct: boolean; firstAttempt: boolean } | undefined;
-    act(() => {
-      correctResult = result.current.submitAnswer('opt-0');
-    });
-    expect(correctResult).toEqual({ correct: true, firstAttempt: false });
+    // Should have moved to question 2
+    expect(result.current.state.currentQuestionIndex).toBe(1);
     expect(result.current.state.firstAttemptResults).toEqual([false]);
+    // Timer should be reset for next question
+    expect(result.current.state.timeRemaining).toBe(QUESTION_TIME_LIMIT_SECONDS);
   });
 
   it('advanceToNextQuestion increments currentQuestionIndex', () => {
@@ -240,7 +259,7 @@ describe('useRaceSession', () => {
     expect(result.current.accuracyPercent).toBe(100);
   });
 
-  it('calculates 3rd placement and 0 stickers when no answers are first-attempt correct', () => {
+  it('calculates 3rd placement and 0 stickers when all answers are wrong', () => {
     const { result } = renderHook(() => useRaceSession());
 
     act(() => {
@@ -250,19 +269,11 @@ describe('useRaceSession', () => {
       result.current.startRace();
     });
 
-    // Give an incorrect answer first for each question, then correct
+    // Wrong answer on each question — each skips to next automatically
     for (let i = 0; i < QUESTIONS_PER_SESSION; i++) {
       act(() => {
-        result.current.submitAnswer('opt-1'); // incorrect
+        result.current.submitAnswer('opt-1'); // incorrect → skips to next
       });
-      act(() => {
-        result.current.submitAnswer('opt-0'); // correct (not first attempt)
-      });
-      if (i < QUESTIONS_PER_SESSION - 1) {
-        act(() => {
-          result.current.advanceToNextQuestion();
-        });
-      }
     }
 
     expect(result.current.state.placement).toBe(3);
@@ -286,17 +297,80 @@ describe('useRaceSession', () => {
     });
     expect(result.current.accuracyPercent).toBe(100);
 
-    // Second question: incorrect first, then correct
+    // Advance and answer wrong (skips automatically)
     act(() => {
       result.current.advanceToNextQuestion();
     });
     act(() => {
-      result.current.submitAnswer('opt-1'); // incorrect
-    });
-    act(() => {
-      result.current.submitAnswer('opt-0'); // correct
+      result.current.submitAnswer('opt-1'); // incorrect → auto-skip
     });
     expect(result.current.accuracyPercent).toBe(50); // 1/2 = 50%
+  });
+
+  it('timer counts down during racing phase', () => {
+    const { result } = renderHook(() => useRaceSession());
+
+    act(() => {
+      result.current.selectCharacter('duck');
+    });
+    act(() => {
+      result.current.startRace();
+    });
+
+    expect(result.current.state.timeRemaining).toBe(QUESTION_TIME_LIMIT_SECONDS);
+
+    // Advance time by 3 seconds
+    act(() => {
+      vi.advanceTimersByTime(3000);
+    });
+
+    expect(result.current.state.timeRemaining).toBe(QUESTION_TIME_LIMIT_SECONDS - 3);
+  });
+
+  it('timer reaching 0 skips the question', () => {
+    const { result } = renderHook(() => useRaceSession());
+
+    act(() => {
+      result.current.selectCharacter('duck');
+    });
+    act(() => {
+      result.current.startRace();
+    });
+
+    // Let the timer run out
+    act(() => {
+      vi.advanceTimersByTime(QUESTION_TIME_LIMIT_SECONDS * 1000 + 100);
+    });
+
+    // Should have skipped to next question
+    expect(result.current.state.currentQuestionIndex).toBe(1);
+    expect(result.current.state.firstAttemptResults).toEqual([false]);
+    expect(result.current.state.playerPosition).toBe(0); // no movement on timeout
+  });
+
+  it('timer resets when advancing to next question', () => {
+    const { result } = renderHook(() => useRaceSession());
+
+    act(() => {
+      result.current.selectCharacter('duck');
+    });
+    act(() => {
+      result.current.startRace();
+    });
+
+    // Let some time pass
+    act(() => {
+      vi.advanceTimersByTime(3000);
+    });
+    expect(result.current.state.timeRemaining).toBe(QUESTION_TIME_LIMIT_SECONDS - 3);
+
+    // Answer correctly
+    act(() => {
+      result.current.submitAnswer('opt-0');
+    });
+
+    // Timer should reset for next question
+    expect(result.current.state.timeRemaining).toBe(QUESTION_TIME_LIMIT_SECONDS);
   });
 
   it('reset returns to character-select with clean state', () => {
@@ -324,11 +398,12 @@ describe('useRaceSession', () => {
     expect(result.current.state.firstAttemptResults).toHaveLength(0);
     expect(result.current.state.placement).toBeNull();
     expect(result.current.state.stickersEarned).toBe(0);
+    expect(result.current.state.timeRemaining).toBe(QUESTION_TIME_LIMIT_SECONDS);
     expect(result.current.accuracyPercent).toBe(0);
     expect(result.current.isFirstAttempt).toBe(true);
   });
 
-  it('isFirstAttempt resets for each new question', () => {
+  it('wrong answer on final question transitions to results', () => {
     const { result } = renderHook(() => useRaceSession());
 
     act(() => {
@@ -338,21 +413,22 @@ describe('useRaceSession', () => {
       result.current.startRace();
     });
 
-    expect(result.current.isFirstAttempt).toBe(true);
+    // Answer first 4 questions correctly
+    for (let i = 0; i < QUESTIONS_PER_SESSION - 1; i++) {
+      act(() => {
+        result.current.submitAnswer('opt-0');
+      });
+      act(() => {
+        result.current.advanceToNextQuestion();
+      });
+    }
 
-    // Incorrect answer
+    // Wrong answer on final question
     act(() => {
       result.current.submitAnswer('opt-1');
     });
-    expect(result.current.isFirstAttempt).toBe(false);
 
-    // Correct answer (resets for next question)
-    act(() => {
-      result.current.submitAnswer('opt-0');
-    });
-    act(() => {
-      result.current.advanceToNextQuestion();
-    });
-    expect(result.current.isFirstAttempt).toBe(true);
+    expect(result.current.state.phase).toBe('results');
+    expect(result.current.state.placement).not.toBeNull();
   });
 });
