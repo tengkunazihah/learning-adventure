@@ -5,7 +5,8 @@ export type ActivityType =
   | 'letter-recognition'
   | 'beginning-sounds'
   | 'first-words'
-  | 'visual-math-problems';
+  | 'visual-math-problems'
+  | 'math-race';
 
 export interface AnswerOption {
   id: string;

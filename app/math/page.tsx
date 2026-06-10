@@ -33,6 +33,12 @@ export default function MathHub() {
           color="bg-card-math"
           icon="🧮"
         />
+        <NavigationCard
+          href="/math/math-race"
+          label="Math Race"
+          color="bg-card-math"
+          icon="🏎️"
+        />
       </div>
     </div>
   );
