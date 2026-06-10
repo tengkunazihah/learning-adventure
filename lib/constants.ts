@@ -110,7 +110,3 @@ export const OPPONENT_POSITION_CAP = 95;
 
 /** Time limit per question in seconds */
 export const QUESTION_TIME_LIMIT_SECONDS = 10;
-
-/** Interval range for opponent random movement (ms) */
-export const OPPONENT_MOVE_INTERVAL_MIN_MS = 2000;
-export const OPPONENT_MOVE_INTERVAL_MAX_MS = 4000;
