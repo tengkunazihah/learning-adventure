@@ -4,7 +4,8 @@ export type ActivityType =
   | 'shape-hunt'
   | 'letter-recognition'
   | 'beginning-sounds'
-  | 'first-words';
+  | 'first-words'
+  | 'visual-math-problems';
 
 export interface AnswerOption {
   id: string;

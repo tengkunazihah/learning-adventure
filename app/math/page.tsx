@@ -27,6 +27,12 @@ export default function MathHub() {
           color="bg-primary"
           icon="🔷"
         />
+        <NavigationCard
+          href="/math/visual-math-problems"
+          label="Visual Math"
+          color="bg-card-math"
+          icon="🧮"
+        />
       </div>
     </div>
   );
