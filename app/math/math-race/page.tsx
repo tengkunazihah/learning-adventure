@@ -15,7 +15,7 @@ import { useSpeech } from '@/hooks/useSpeech';
 import { useCelebration } from '@/hooks/useCelebration';
 import { useAudio } from '@/hooks/useAudio';
 import { awardSticker } from '@/features/rewards/sticker-engine';
-import { RACE_CHARACTERS, CELEBRATION_DURATION_MS, QUESTIONS_PER_SESSION } from '@/lib/constants';
+import { RACE_CHARACTERS, CELEBRATION_DURATION_MS, QUESTIONS_PER_SESSION, QUESTION_TIME_LIMIT_SECONDS } from '@/lib/constants';
 import type { RaceCharacter } from '@/features/math/math-race';
 import type { Sticker } from '@/types/sticker';
 
@@ -37,7 +37,7 @@ async function persistStickerWithRetry(
       return; // Success
     } catch {
       if (attempt === MAX_ATTEMPTS) {
-        // Final attempt failed — sticker animation still shows (Req 6.6)
+        // Final attempt failed — sticker animation still shows
         return;
       }
       // Exponential backoff before retry: 100ms, 200ms
@@ -51,7 +51,9 @@ async function persistStickerWithRetry(
  *
  * Orchestrates the full race flow:
  * 1. Character Selection — pick a racer, show back button
- * 2. Racing — answer questions, animate track, celebrate/shake on correct/incorrect
+ * 2. Racing — answer questions with timer, animate track, opponents move randomly
+ *    - Correct answer: celebrate, move forward, advance
+ *    - Wrong answer: brief feedback, skip to next question, no movement
  * 3. Results — show podium, placement, stickers earned
  */
 export default function MathRacePage() {
@@ -76,12 +78,12 @@ export default function MathRacePage() {
   const { celebrate, isActive: celebrationActive, message: celebrationMessage } = useCelebration();
   const { playCelebration, playEncouragement } = useAudio();
 
-  // Track disabled options for current question (reset on advance)
-  const [disabledOptions, setDisabledOptions] = useState<Set<string>>(new Set());
   // Track option visual states for current question
   const [optionStates, setOptionStates] = useState<Record<string, AnswerOptionState>>({});
   // Track whether we're in the celebration delay before auto-advance
   const [isCelebrating, setIsCelebrating] = useState(false);
+  // Track whether showing wrong answer feedback before skipping
+  const [isShowingWrongFeedback, setIsShowingWrongFeedback] = useState(false);
 
   // Sticker awarding state
   const [isAwardingStickers, setIsAwardingStickers] = useState(false);
@@ -133,14 +135,14 @@ export default function MathRacePage() {
         stickers.push(newSticker);
         localCollected = [...localCollected, newSticker];
 
-        // Persist with retry (up to 2 retries, Req 6.6)
+        // Persist with retry (up to 2 retries)
         await persistStickerWithRetry(addSticker, newSticker);
 
         // Update displayed stickers sequentially
         setAwardedStickers([...stickers]);
         setCurrentStickerIndex(i);
 
-        // Wait for animation delay between stickers (800–1500ms range, using 1000ms)
+        // Wait for animation delay between stickers
         if (i < stickersToAward - 1) {
           await new Promise((resolve) => setTimeout(resolve, STICKER_ANIMATION_DELAY_MS));
         }
@@ -169,10 +171,10 @@ export default function MathRacePage() {
     ) {
       prevQuestionIndexRef.current = state.currentQuestionIndex;
 
-      // Reset option states and disabled options for new question
-      setDisabledOptions(new Set());
+      // Reset option states for new question
       setOptionStates({});
       setIsCelebrating(false);
+      setIsShowingWrongFeedback(false);
 
       // Cancel previous speech and speak new question
       const currentQuestion = state.questions[state.currentQuestionIndex];
@@ -222,7 +224,7 @@ export default function MathRacePage() {
   // Handle answer selection
   const onSelectAnswer = useCallback(
     (optionId: string) => {
-      if (isCelebrating) return;
+      if (isCelebrating || isShowingWrongFeedback) return;
 
       const { correct } = submitAnswer(optionId);
 
@@ -244,9 +246,9 @@ export default function MathRacePage() {
           advanceToNextQuestion();
         }, CELEBRATION_DURATION_MS);
       } else {
-        // Mark as incorrect with shake animation
+        // Mark as incorrect — show brief feedback then skip
         setOptionStates((prev) => ({ ...prev, [optionId]: 'incorrect' }));
-        setDisabledOptions((prev) => new Set(prev).add(optionId));
+        setIsShowingWrongFeedback(true);
 
         // Play encouragement sound
         try {
@@ -254,9 +256,12 @@ export default function MathRacePage() {
         } catch {
           // Audio failure — visual feedback still displays
         }
+
+        // The hook already advanced to next question, but we show feedback briefly
+        // The question index change will trigger the reset via the useEffect above
       }
     },
-    [isCelebrating, submitAnswer, celebrate, playCelebration, playEncouragement, advanceToNextQuestion]
+    [isCelebrating, isShowingWrongFeedback, submitAnswer, celebrate, playCelebration, playEncouragement, advanceToNextQuestion]
   );
 
   // Handle "Start Race" — transition from character select to racing
@@ -284,6 +289,16 @@ export default function MathRacePage() {
   const currentQuestion = state.phase === 'racing'
     ? state.questions[state.currentQuestionIndex]
     : null;
+
+  // Timer color based on remaining time
+  const timerColor = state.timeRemaining <= 3
+    ? 'text-red-500'
+    : state.timeRemaining <= 5
+      ? 'text-orange-500'
+      : 'text-neutral-700';
+
+  // Timer progress percentage
+  const timerPercent = (state.timeRemaining / QUESTION_TIME_LIMIT_SECONDS) * 100;
 
   // --- RENDER ---
 
@@ -356,9 +371,27 @@ export default function MathRacePage() {
   // Racing phase
   return (
     <div className="min-h-screen bg-background flex flex-col items-center px-4 py-6 gap-6">
-      {/* Question indicator */}
-      <div className="text-kid-body font-bold text-neutral-700" aria-live="polite">
-        Question {state.currentQuestionIndex + 1} of {state.questions.length}
+      {/* Header: Question indicator + Timer */}
+      <div className="w-full max-w-xl flex items-center justify-between">
+        <div className="text-kid-body font-bold text-neutral-700" aria-live="polite">
+          Question {state.currentQuestionIndex + 1} of {state.questions.length}
+        </div>
+
+        {/* Timer display */}
+        <div className="flex items-center gap-2" aria-label={`${state.timeRemaining} seconds remaining`}>
+          <div className="relative w-32 h-3 bg-neutral-200 rounded-full overflow-hidden">
+            <div
+              className="absolute inset-y-0 left-0 rounded-full transition-all duration-1000 ease-linear"
+              style={{
+                width: `${timerPercent}%`,
+                backgroundColor: state.timeRemaining <= 3 ? '#ef4444' : state.timeRemaining <= 5 ? '#f97316' : '#22c55e',
+              }}
+            />
+          </div>
+          <span className={`text-lg font-bold tabular-nums ${timerColor}`} aria-live="polite">
+            {state.timeRemaining}s
+          </span>
+        </div>
       </div>
 
       {/* Race track */}
@@ -393,9 +426,16 @@ export default function MathRacePage() {
               label={option.label}
               onSelect={onSelectAnswer}
               state={optionStates[option.id] ?? 'idle'}
-              disabled={isCelebrating || disabledOptions.has(option.id)}
+              disabled={isCelebrating || isShowingWrongFeedback}
             />
           ))}
+        </div>
+      )}
+
+      {/* Wrong answer feedback message */}
+      {isShowingWrongFeedback && (
+        <div className="text-center text-orange-600 font-bold text-kid-body animate-pulse" aria-live="assertive">
+          Oops! Keep going! 💪
         </div>
       )}
 
