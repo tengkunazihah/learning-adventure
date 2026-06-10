@@ -4,16 +4,14 @@ import React from 'react';
 import { BackButton } from '@/components/ui/BackButton';
 import { StickerGrid } from '@/components/rewards/StickerGrid';
 import type { Sticker, StickerCategory } from '@/types/sticker';
+import { useProgress } from '@/hooks/useProgress';
 
 /**
  * Sticker Book page displaying all collected stickers organized by category.
- *
- * TODO: Replace the empty array with data from useProgress hook once Task 16
- * (Progress Management) is implemented.
  */
 export default function StickerBookPage() {
-  // TODO: Use useProgress() hook to get collected stickers once available
-  const collectedStickers: Sticker[] = [];
+  const { progress } = useProgress();
+  const collectedStickers = progress.stickersCollected;
 
   // Group stickers by category
   const stickersByCategory = collectedStickers.reduce<
