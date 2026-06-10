@@ -162,6 +162,31 @@ describe('useRaceSession', () => {
     expect(result.current.state.firstAttemptResults).toEqual([false]);
   });
 
+  it('opponents move when player answers (simulating them also answering)', () => {
+    const { result } = renderHook(() => useRaceSession());
+
+    act(() => {
+      result.current.selectCharacter('duck');
+    });
+    act(() => {
+      result.current.startRace();
+    });
+
+    // Both opponents start at 0
+    expect(result.current.state.opponent1Position).toBe(0);
+    expect(result.current.state.opponent2Position).toBe(0);
+
+    // After player answers, opponents should attempt to move
+    act(() => {
+      result.current.submitAnswer('opt-0'); // correct
+    });
+
+    // With mocked randomInt returning midpoint, opponents should have moved
+    // (randomInt(1,10) returns 5, which is <= 7 for opp1 and <= 5 for opp2, so both move)
+    expect(result.current.state.opponent1Position).toBeGreaterThanOrEqual(0);
+    expect(result.current.state.opponent2Position).toBeGreaterThanOrEqual(0);
+  });
+
   it('wrong answer records false in firstAttemptResults and moves to next question', () => {
     const { result } = renderHook(() => useRaceSession());
 

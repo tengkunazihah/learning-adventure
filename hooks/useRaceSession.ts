@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import { QUESTIONS_PER_SESSION, QUESTION_TIME_LIMIT_SECONDS, OPPONENT_MOVE_INTERVAL_MIN_MS, OPPONENT_MOVE_INTERVAL_MAX_MS } from '@/lib/constants';
+import { QUESTIONS_PER_SESSION, QUESTION_TIME_LIMIT_SECONDS } from '@/lib/constants';
 import type { RaceCharacter, RaceQuestion, Placement } from '@/features/math/math-race';
 import {
   generateRaceQuestions,
@@ -69,25 +69,14 @@ export function useRaceSession(): UseRaceSessionReturn {
   // Track whether any incorrect answer has been given for the current question
   const [hasIncorrectAttempt, setHasIncorrectAttempt] = useState(false);
 
-  // Timer refs
+  // Timer ref
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  // Opponent movement refs
-  const opponent1TimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const opponent2TimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Cleanup timers
+  // Cleanup timer
   const clearAllTimers = useCallback(() => {
     if (timerRef.current) {
       clearInterval(timerRef.current);
       timerRef.current = null;
-    }
-    if (opponent1TimerRef.current) {
-      clearTimeout(opponent1TimerRef.current);
-      opponent1TimerRef.current = null;
-    }
-    if (opponent2TimerRef.current) {
-      clearTimeout(opponent2TimerRef.current);
-      opponent2TimerRef.current = null;
     }
   }, []);
 
@@ -101,6 +90,39 @@ export function useRaceSession(): UseRaceSessionReturn {
       ...prev,
       selectedCharacter: character,
     }));
+  }, []);
+
+  /**
+   * Simulate opponents answering the current question.
+   * Each opponent has a random chance of getting it right.
+   * Opponent 1 is stronger (70% correct), Opponent 2 is weaker (50% correct).
+   * If correct, they move forward by the standard increment (with slight variation).
+   * If wrong, they don't move — just like the player.
+   */
+  const moveOpponents = useCallback(() => {
+    const increment = getPlayerIncrement(QUESTIONS_PER_SESSION);
+
+    setState((prev) => {
+      if (prev.phase !== 'racing') return prev;
+
+      // Opponent 1: 70% chance of answering correctly
+      const opp1Correct = randomInt(1, 10) <= 7;
+      const newOpp1Pos = opp1Correct
+        ? Math.min(100, prev.opponent1Position + increment)
+        : prev.opponent1Position;
+
+      // Opponent 2: 50% chance of answering correctly
+      const opp2Correct = randomInt(1, 10) <= 5;
+      const newOpp2Pos = opp2Correct
+        ? Math.min(100, prev.opponent2Position + increment)
+        : prev.opponent2Position;
+
+      return {
+        ...prev,
+        opponent1Position: newOpp1Pos,
+        opponent2Position: newOpp2Pos,
+      };
+    });
   }, []);
 
   /**
@@ -157,6 +179,9 @@ export function useRaceSession(): UseRaceSessionReturn {
 
   // Handle timeout-triggered skip and finalization
   const handleTimeout = useCallback(() => {
+    // Opponents also "answer" when the timer expires
+    moveOpponents();
+
     setState((prev) => {
       const newFirstAttemptResults = [...prev.firstAttemptResults, false];
       const isFinalQuestion = prev.currentQuestionIndex === QUESTIONS_PER_SESSION - 1;
@@ -191,7 +216,7 @@ export function useRaceSession(): UseRaceSessionReturn {
     });
 
     setHasIncorrectAttempt(false);
-  }, []);
+  }, [moveOpponents]);
 
   // Question countdown timer
   useEffect(() => {
@@ -229,67 +254,6 @@ export function useRaceSession(): UseRaceSessionReturn {
     }
   }, [state.timeRemaining, state.phase, handleTimeout]);
 
-  // Opponent random movement during racing
-  useEffect(() => {
-    if (state.phase !== 'racing') {
-      return;
-    }
-
-    const increment = getPlayerIncrement(QUESTIONS_PER_SESSION);
-
-    // Schedule random movements for opponent 1
-    const scheduleOpponent1 = () => {
-      const delay = randomInt(OPPONENT_MOVE_INTERVAL_MIN_MS, OPPONENT_MOVE_INTERVAL_MAX_MS);
-      opponent1TimerRef.current = setTimeout(() => {
-        setState((prev) => {
-          if (prev.phase !== 'racing') return prev;
-          // Random chance to move (70% chance — simulates getting answer right)
-          const moves = randomInt(0, 9) < 7;
-          if (!moves) {
-            scheduleOpponent1();
-            return prev;
-          }
-          const newPos = Math.min(95, prev.opponent1Position + increment * (0.6 + Math.random() * 0.6));
-          return { ...prev, opponent1Position: newPos };
-        });
-        scheduleOpponent1();
-      }, delay);
-    };
-
-    // Schedule random movements for opponent 2
-    const scheduleOpponent2 = () => {
-      const delay = randomInt(OPPONENT_MOVE_INTERVAL_MIN_MS, OPPONENT_MOVE_INTERVAL_MAX_MS);
-      opponent2TimerRef.current = setTimeout(() => {
-        setState((prev) => {
-          if (prev.phase !== 'racing') return prev;
-          // Random chance to move (55% chance — slightly weaker opponent)
-          const moves = randomInt(0, 9) < 5;
-          if (!moves) {
-            scheduleOpponent2();
-            return prev;
-          }
-          const newPos = Math.min(90, prev.opponent2Position + increment * (0.4 + Math.random() * 0.5));
-          return { ...prev, opponent2Position: newPos };
-        });
-        scheduleOpponent2();
-      }, delay);
-    };
-
-    scheduleOpponent1();
-    scheduleOpponent2();
-
-    return () => {
-      if (opponent1TimerRef.current) {
-        clearTimeout(opponent1TimerRef.current);
-        opponent1TimerRef.current = null;
-      }
-      if (opponent2TimerRef.current) {
-        clearTimeout(opponent2TimerRef.current);
-        opponent2TimerRef.current = null;
-      }
-    };
-  }, [state.phase]);
-
   const startRace = useCallback(() => {
     const questions = generateRaceQuestions(QUESTIONS_PER_SESSION);
     setState((prev) => ({
@@ -317,6 +281,9 @@ export function useRaceSession(): UseRaceSessionReturn {
 
       const isCorrect = optionId === currentQuestion.correctOptionId;
       const isFirstAttempt = !hasIncorrectAttempt;
+
+      // Opponents also "answer" whenever the player answers
+      moveOpponents();
 
       if (!isCorrect) {
         // Wrong answer — record as incorrect and skip to next question (no movement)
@@ -364,7 +331,7 @@ export function useRaceSession(): UseRaceSessionReturn {
 
       return { correct: true, firstAttempt: isFirstAttempt };
     },
-    [state.questions, state.currentQuestionIndex, state.firstAttemptResults, state.playerPosition, hasIncorrectAttempt, finalizeRace]
+    [state.questions, state.currentQuestionIndex, state.firstAttemptResults, state.playerPosition, hasIncorrectAttempt, finalizeRace, moveOpponents]
   );
 
   const advanceToNextQuestion = useCallback(() => {
