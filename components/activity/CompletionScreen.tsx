@@ -39,13 +39,10 @@ export function CompletionScreen({
           <p className="text-kid-heading font-bold text-neutral-700 text-center">
             You earned a sticker!
           </p>
-          <div className="w-40 h-40 rounded-3xl bg-white shadow-lg border-4 border-accent flex items-center justify-center overflow-hidden">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={sticker.imageUrl}
-              alt={sticker.name}
-              className="w-32 h-32 object-contain"
-            />
+          <div className="w-40 h-40 rounded-3xl bg-white shadow-lg border-4 border-accent flex items-center justify-center">
+            <span className="text-8xl" role="img" aria-label={sticker.name}>
+              {sticker.imageUrl}
+            </span>
           </div>
           <p className="text-kid-body font-semibold text-neutral-600 text-center">
             {sticker.name}

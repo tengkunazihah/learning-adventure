@@ -3,23 +3,25 @@
 import { useState, useCallback } from 'react';
 import type { Sticker } from '@/types/sticker';
 import { awardSticker } from '@/features/rewards/sticker-engine';
+import { useProgress } from '@/hooks/useProgress';
 
 /**
  * Hook for awarding stickers upon activity completion.
  *
- * Currently awards stickers with an empty collection (no deduplication).
- * TODO: Integrate with useProgress when available (Task 16) to pass
- * the child's actual collected stickers for proper deduplication logic.
+ * Integrates with useProgress to:
+ * - Pass the child's collected stickers for deduplication
+ * - Persist the awarded sticker to storage
  */
 export function useSticker() {
+  const { progress, addSticker } = useProgress();
   const [sticker, setSticker] = useState<Sticker | null>(null);
 
   const awardNewSticker = useCallback((): Sticker => {
-    // Pass empty array for now — will connect to progress context later
-    const newSticker = awardSticker([]);
+    const newSticker = awardSticker(progress.stickersCollected);
     setSticker(newSticker);
+    addSticker(newSticker);
     return newSticker;
-  }, []);
+  }, [progress.stickersCollected, addSticker]);
 
   return { sticker, awardNewSticker };
 }
