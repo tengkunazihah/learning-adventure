@@ -1,0 +1,84 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: var(--font-nunito), ui-rounded, "Nunito", system-ui, sans-serif;
+
+  --color-primary: #FF6B35;
+  --color-secondary: #4ECDC4;
+  --color-accent: #FFE66D;
+  --color-success: #7BC950;
+  --color-background: #FFF8E1;
+  --color-card-math: #FF6B6B;
+  --color-card-english: #4ECDC4;
+  --color-card-stickers: #FFE66D;
+  --color-card-parent: #95E1D3;
+
+  --min-width-touch: 80px;
+  --min-height-touch: 80px;
+
+  --font-size-kid-body: 18px;
+  --font-size-kid-heading: 28px;
+  --font-size-kid-large: 48px;
+
+  --animate-pulse-pop: pulse-pop 0.5s ease-in-out;
+  --animate-gentle-shake: gentle-shake 0.4s ease-in-out;
+}
+
+@keyframes pulse-pop {
+  0% {
+    transform: scale(1);
+  }
+  30% {
+    transform: scale(1.08);
+  }
+  60% {
+    transform: scale(0.97);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes gentle-shake {
+  0% {
+    transform: translateX(0);
+  }
+  20% {
+    transform: translateX(-4px);
+  }
+  40% {
+    transform: translateX(4px);
+  }
+  60% {
+    transform: translateX(-3px);
+  }
+  80% {
+    transform: translateX(2px);
+  }
+  100% {
+    transform: translateX(0);
+  }
+}
+
+@keyframes star-float {
+  0% {
+    opacity: 0;
+    transform: translateY(0) scale(0.5);
+  }
+  20% {
+    opacity: 1;
+    transform: translateY(-10px) scale(1.2);
+  }
+  80% {
+    opacity: 1;
+    transform: translateY(-30px) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-50px) scale(0.8);
+  }
+}
+
+.animate-star-float {
+  animation: star-float 2s ease-in-out forwards;
+}
